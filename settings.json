@@ -1,0 +1,7 @@
+{
+  "mode": "practice",
+  "bankroll": 1000,
+  "edge_needed_pts": 3,
+  "max_bet_pct": 2,
+  "polymarket_link_base": "https://polymarket.com/event/"
+}
