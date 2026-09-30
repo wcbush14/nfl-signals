@@ -322,8 +322,11 @@ def track_record(sig=None):
     sig = load_signals() if sig is None else sig
     if sig.empty:
         return {"signals": 0}
-    done = sig[sig["won"].notna()] if "won" in sig else sig.iloc[0:0]
-    closed = sig[sig["close_price"].notna()] if "close_price" in sig else sig.iloc[0:0]
+    for col in ["close_price", "won", "profit"]:
+        if col not in sig:
+            sig[col] = None
+    done = sig[sig["won"].notna()]
+    closed = sig[sig["close_price"].notna()]
     return {
         "signals": len(sig),
         "graded": len(done),
@@ -336,9 +339,58 @@ def track_record(sig=None):
     }
 
 
+# ---------- Daily summary ----------
+SUMMARY_SENT = DATA / "summary_sent.txt"
+
+
+def daily_summary(snapshot, force=False):
+    """One morning notification: open bets, biggest gap, and the track record."""
+    now_ct = datetime.now(timezone.utc).astimezone(CENTRAL)
+    today = now_ct.strftime("%Y-%m-%d")
+    already = SUMMARY_SENT.exists() and SUMMARY_SENT.read_text().strip() == today
+    if not force and (already or not 6 <= now_ct.hour <= 8):
+        return False
+
+    lines = []
+    open_now = find_signals(snapshot) if not snapshot.empty else pd.DataFrame()
+    if open_now.empty:
+        lines.append("No bets right now.")
+    else:
+        for s in open_now.to_dict("records"):
+            name = TEAM_NAMES.get(s["team"], s["team"])
+            lines.append(f"Open: {name} at {s['max_price'] * 100:.0f}c or less "
+                         f"({s['away_team']} @ {s['home_team']}, {central(s['kickoff_utc'])} CT).")
+    if not snapshot.empty:
+        top = snapshot.loc[snapshot.gap.abs().idxmax()]
+        lines.append(f"Watching {len(snapshot)} games. Biggest gap: {abs(top.gap) * 100:.1f} pts "
+                     f"({top.away_team} @ {top.home_team}).")
+    rec = track_record()
+    if rec["signals"]:
+        rec_line = f"Track record: {rec['signals']} signal" + ("s" if rec["signals"] != 1 else "")
+        if rec["graded"]:
+            sign = "+" if rec["profit"] >= 0 else "-"
+            rec_line += (f", {rec['wins']}-{rec['losses']}, "
+                         f"{sign}${abs(rec['profit']):,.0f} paper")
+        if rec["price_checked"]:
+            rec_line += (f", price moved our way {rec['price_moved_our_way']}"
+                         f"/{rec['price_checked']}")
+        lines.append(rec_line + ".")
+    else:
+        lines.append("No signals yet this season.")
+    lines.append(f"Odds API credits left: {credits_left}.")
+
+    mode = "Practice mode" if SETTINGS["mode"] != "live" else "Live mode"
+    if notify(f"NFL daily check ({mode})", " ".join(lines)):
+        DATA.mkdir(exist_ok=True)
+        SUMMARY_SENT.write_text(today)
+        return True
+    return False
+
+
 # ---------- Command line / GitHub Actions ----------
 if __name__ == "__main__":
-    if os.environ.get("TEST_ALERT", "").lower() == "true":
+    testing = os.environ.get("TEST_ALERT", "").lower() == "true"
+    if testing:
         sent = notify("NFL alerts are working", "Test notification from your NFL signal checker.")
         print("Test alert sent." if sent else "No NTFY_TOPIC set, so no test alert was sent.")
 
@@ -348,6 +400,7 @@ if __name__ == "__main__":
     except CheckError as err:
         raise SystemExit(f"Problem: {err}")
 
+    grade_signals()
     if snap.empty:
         print("No upcoming games to compare right now.")
     else:
@@ -356,6 +409,7 @@ if __name__ == "__main__":
         print(f"Checked {len(snap)} games. New signals: {len(new)}.")
         for s in new.to_dict("records"):
             print("  " + " | ".join(signal_message(s)))
-    grade_signals()
+    if daily_summary(snap, force=testing):
+        print("Daily summary sent.")
     print("Track record:", track_record())
     print("Odds API credits left:", credits_left)
