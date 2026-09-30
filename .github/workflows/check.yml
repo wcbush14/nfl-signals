@@ -1,0 +1,42 @@
+   name: NFL signal check
+
+   on:
+     schedule:
+       - cron: "15 */3 * * *"
+     workflow_dispatch:
+       inputs:
+         test_alert:
+           description: "Also send a test notification to my phone"
+           type: boolean
+           default: false
+
+   permissions:
+     contents: write
+
+   concurrency: nfl-check
+
+   jobs:
+     check:
+       runs-on: ubuntu-latest
+       steps:
+         - uses: actions/checkout@v4
+         - uses: actions/setup-python@v5
+           with:
+             python-version: "3.12"
+         - run: pip install pandas
+         - name: Check prices and send signals
+           env:
+             ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+             NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+             TEST_ALERT: ${{ inputs.test_alert }}
+           run: python checker.py
+         - name: Save results
+           run: |
+             git config user.name "nfl-signal-bot"
+             git config user.email "nfl-signal-bot@users.noreply.github.com"
+             git add nfl_data
+             if ! git diff --cached --quiet; then
+               git commit -m "Price check $(date -u '+%Y-%m-%d %H:%M')"
+               git pull --rebase
+               git push
+             fi
