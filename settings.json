@@ -1,7 +1,8 @@
-{
-  "mode": "practice",
-  "bankroll": 1000,
-  "edge_needed_pts": 2,
-  "max_bet_pct": 2,
-  "polymarket_link": "https://polymarket.us/sports/nfl"
-}
+   {
+     "mode": "practice",
+     "bankroll": 1000,
+     "edge_needed_pts": 2,
+     "max_bet_pct": 2,
+     "polymarket_link": "https://polymarket.us/sports/nfl",
+     "leagues": ["nfl", "cfb", "mlb"]
+   }
